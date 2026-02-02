@@ -1,0 +1,18 @@
+World:
+	LuaScript:
+		Scripts: campaign.lua, utils.lua, copilot04.lua
+	MissionData:
+		Briefing: Control 20 Yak Fighters to destroy enemy base within 180 seconds, minimize losses.\nNote: No reinforcements available.\nHint: The enemy base is near the left edge of the map.
+	WeatherOverlay:
+		ChangingWindLevel: true
+		InstantWindChanges: false
+		UseSquares: true
+		ParticleSize: 2, 3
+		ScatterDirection: -1, 1
+		ParticleColors: ECECEC, E4E4E4, D0D0D0, BCBCBC
+		LineTailAlphaValue: 0
+	TintPostProcessEffect:
+		Red: 0.88
+		Green: 0.93
+		Blue: 1.06
+		Ambient: 1.09

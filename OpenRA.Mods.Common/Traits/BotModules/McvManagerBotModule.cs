@@ -44,6 +44,18 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Should deployment of additional MCVs be restricted to MaxBaseRadius if explicit deploy locations are missing or occupied?")]
 		public readonly bool RestrictMCVDeploymentFallbackToBase = true;
 
+		[Desc("Cash threshold to trigger expansion (building a new MCV).")]
+		public readonly int ExpansionCashThreshold = 1000;
+
+		[Desc("Maximum number of bases (construction yards) allowed.")]
+		public readonly int MaxBaseCount = 2;
+
+		[Desc("Minimum distance from existing bases for a new expansion.")]
+		public readonly int MinimumExpansionDistance = 30;
+
+		[Desc("Maximum distance from existing bases for a new expansion.")]
+		public readonly int MaximumExpansionDistance = 50;
+
 		public override object Create(ActorInitializer init) { return new McvManagerBotModule(init.Self, this); }
 	}
 
@@ -66,6 +78,9 @@ namespace OpenRA.Mods.Common.Traits
 
 		IBotPositionsUpdated[] notifyPositionsUpdated;
 		IBotRequestUnitProduction[] requestUnitProduction;
+		PlayerResources playerResources;
+		IResourceLayer resourceLayer;
+		TechTree techTree;
 
 		CPos initialBaseCenter;
 		int scanInterval;
@@ -85,6 +100,9 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			notifyPositionsUpdated = self.Owner.PlayerActor.TraitsImplementing<IBotPositionsUpdated>().ToArray();
 			requestUnitProduction = self.Owner.PlayerActor.TraitsImplementing<IBotRequestUnitProduction>().ToArray();
+			playerResources = self.Owner.PlayerActor.Trait<PlayerResources>();
+			resourceLayer = self.World.WorldActor.TraitOrDefault<IResourceLayer>();
+			techTree = self.Owner.PlayerActor.TraitOrDefault<TechTree>();
 		}
 
 		protected override void TraitEnabled(Actor self)
@@ -131,9 +149,36 @@ namespace OpenRA.Mods.Common.Traits
 			if (!allowedToBuildMCV)
 				return false;
 
-			// Build MCV if we don't have the desired number of construction yards, unless we have no factory (can't build it).
-			return AIUtils.CountActorByCommonName(constructionYards) < Info.MinimumConstructionYardCount &&
-				AIUtils.CountActorByCommonName(mcvFactories) > 0;
+			var constructionYardCount = AIUtils.CountActorByCommonName(constructionYards);
+
+			// Recovery Mode: Build MCV if we don't have any construction yards (and we have a factory to build it).
+			if (constructionYardCount < Info.MinimumConstructionYardCount && AIUtils.CountActorByCommonName(mcvFactories) > 0)
+				return true;
+
+			// Expansion Mode: Build MCV if we have excess cash and haven't reached max base count.
+			var activeMcvs = AIUtils.CountActorByCommonName(mcvs);
+
+			// Count MCVs currently in production queue (to avoid double ordering)
+			var mcvsInProduction = world.ActorsWithTrait<ProductionQueue>()
+				.Where(a => a.Actor.Owner == player)
+				.SelectMany(a => a.Trait.AllQueued())
+				.Count(i => Info.McvTypes.Contains(i.Item));
+
+			if (constructionYardCount + activeMcvs + mcvsInProduction < Info.MaxBaseCount)
+			{
+				// Check if we can build any MCV (prerequisites met)
+				foreach (var mcvType in Info.McvTypes)
+				{
+					if (!world.Map.Rules.Actors.TryGetValue(mcvType, out var actorInfo))
+						continue;
+
+					var buildable = actorInfo.TraitInfoOrDefault<BuildableInfo>();
+					if (buildable != null && techTree != null && techTree.HasPrerequisites(buildable.Prerequisites))
+						return true;
+				}
+			}
+
+			return false;
 		}
 
 		void DeployMcvs(IBot bot, bool chooseLocation)
@@ -151,12 +196,16 @@ namespace OpenRA.Mods.Common.Traits
 			if (move)
 			{
 				// If we lack a base, we need to make sure we don't restrict deployment of the MCV to the base!
+				var baseCount = AIUtils.CountActorByCommonName(constructionYards);
 				var restrictToBase =
 					Info.RestrictMCVDeploymentFallbackToBase &&
-					AIUtils.CountActorByCommonName(constructionYards) > 0;
+					baseCount > 0;
+
+				// If we are expanding (have at least one base), we should look for a spot further away
+				var isExpansion = baseCount > 0;
 
 				var transformsInfo = mcv.Info.TraitInfo<TransformsInfo>();
-				var desiredLocation = ChooseMcvDeployLocation(transformsInfo.IntoActor, transformsInfo.Offset, restrictToBase);
+				var desiredLocation = ChooseMcvDeployLocation(transformsInfo.IntoActor, transformsInfo.Offset, restrictToBase, isExpansion);
 				if (desiredLocation == null)
 					return;
 
@@ -175,7 +224,7 @@ namespace OpenRA.Mods.Common.Traits
 			bot.QueueOrder(new Order("DeployTransform", mcv, true));
 		}
 
-		CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant)
+		CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant, bool isExpansion)
 		{
 			var actorInfo = world.Map.Rules.Actors[actorType];
 			var bi = actorInfo.TraitInfoOrDefault<BuildingInfo>();
@@ -201,9 +250,36 @@ namespace OpenRA.Mods.Common.Traits
 			}
 
 			var baseCenter = GetRandomBaseCenter();
+			var targetCenter = baseCenter;
+			var minRange = Info.MinBaseRadius;
+			var maxRange = distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange;
 
-			return FindPos(baseCenter, baseCenter, Info.MinBaseRadius,
-				distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
+			if (isExpansion && resourceLayer != null)
+			{
+				// Find a resource patch that is far enough from existing bases
+				var existingBases = constructionYards.Actors.Select(a => a.Location).ToList();
+				var maxSearchRadius = System.Math.Min(Info.MaximumExpansionDistance, world.Map.Grid.MaximumTileSearchRange);
+				var minSearchRadius = System.Math.Min(Info.MinimumExpansionDistance, maxSearchRadius);
+
+				var potentialResourceTiles = world.Map.FindTilesInAnnulus(baseCenter, minSearchRadius, maxSearchRadius)
+					.Where(c => resourceLayer.GetResource(c).Type != null)
+					.Shuffle(world.LocalRandom)
+					.Take(20);
+
+				foreach (var tile in potentialResourceTiles)
+				{
+					// Ensure this tile is far from ALL existing bases
+					if (existingBases.All(baseLoc => (tile - baseLoc).LengthSquared >= Info.MinimumExpansionDistance * Info.MinimumExpansionDistance))
+					{
+						targetCenter = tile;
+						minRange = 2; // Close to resources
+						maxRange = 10;
+						break;
+					}
+				}
+			}
+
+			return FindPos(targetCenter, targetCenter, minRange, maxRange);
 		}
 
 		List<MiniYamlNode> IGameSaveTraitData.IssueTraitData(Actor self)

@@ -882,6 +882,16 @@ namespace OpenRA.Mods.Common.Commands
 			}
 		}
 
+		public static string ExpandBaseCommand(JObject json, World world)
+		{
+			var player = ResolvePlayer(json, world);
+			var expansionManager = player.PlayerActor.TraitOrDefault<CopilotExpansionManager>();
+			if (expansionManager == null)
+				return "Player does not have CopilotExpansionManager trait.";
+
+			expansionManager.StartExpansion(player);
+			return "Base expansion started.";
+		}
 
 		public static string PlaceBuildingCommand(JObject json, World world)
 		{
@@ -1563,6 +1573,7 @@ namespace OpenRA.Mods.Common.Commands
 
 				w.CopilotServer.CommandHandlers["place_building"] = PlaceBuildingCommand;
 				w.CopilotServer.CommandHandlers["manage_production"] = ManageProductionCommand;
+				w.CopilotServer.CommandHandlers["expand_base"] = ExpandBaseCommand;
 				w.CopilotServer.QueryHandlers["start_production"] = StartProductionCommand;
 
 				w.CopilotServer.QueryHandlers["query_actor"] = ActorQueryCommand;

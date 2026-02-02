@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>OpenRA</AssemblyName>
@@ -24,6 +24,7 @@
   <ItemGroup>
     <None Include="App.config" />
     <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
+    <ProjectReference Include="..\OpenRA.Platforms.Default\OpenRA.Platforms.Default.csproj" />
     <AdditionalFiles Include="Properties/launchSettings.json" />
   </ItemGroup>
 </Project>

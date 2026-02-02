@@ -1,0 +1,23 @@
+
+Player:
+	PlayerResources:
+		DefaultCash: 8000
+
+World:
+	CopilotScoreService:
+		TimeLimit: 10500
+	CopilotControlPoint:
+	-CrateSpawner:
+	LuaScript:
+		Scripts: campaign.lua, utils.lua, copilot-fin.lua
+
+CAMERA:
+	RevealsShroud:
+		Range: 12c0
+		Type: CenterPosition
+
+GAP:
+	DamageMultiplier:
+		Modifier: 0
+	Power:
+		Amount: 10

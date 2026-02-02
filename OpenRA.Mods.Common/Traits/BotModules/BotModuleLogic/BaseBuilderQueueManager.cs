@@ -223,6 +223,10 @@ namespace OpenRA.Mods.Common.Traits
 				if (!baseBuilder.Info.BuildingLimits.TryGetValue(actor.Name, out var limit))
 					return true;
 
+				// Allow dynamic refinery count to override static limits from YAML
+				if (baseBuilder.Info.RefineryTypes.Contains(actor.Name))
+					limit = Math.Max(limit, baseBuilder.MinimumRefineryCount());
+
 				return playerBuildings.Count(a => a.Info.Name == actor.Name) < limit;
 			});
 
@@ -470,44 +474,77 @@ namespace OpenRA.Mods.Common.Traits
 				return (null, 0);
 			}
 
-			var baseCenter = baseBuilder.GetRandomBaseCenter();
+			var baseActors = baseBuilder.GetBaseActors();
+			var baseLocations = new List<CPos>();
 
-			switch (type)
+			if (baseActors.Any())
 			{
-				case BuildingType.Defense:
+				// Strategy:
+				// Refinery: Prioritize the newest base (highest ActorID) to support expansion economy.
+				// Others: Randomize to distribute buildings.
+				if (type == BuildingType.Refinery)
+				{
+					baseLocations.AddRange(baseActors.OrderByDescending(a => a.ActorID).Select(a => a.Location));
+				}
+				else
+				{
+					baseLocations.AddRange(baseActors.Select(a => a.Location).Shuffle(world.LocalRandom));
+				}
+			}
+			else
+			{
+				// Fallback if no construction yards (e.g. only initial base center known)
+				baseLocations.Add(baseBuilder.GetRandomBaseCenter());
+			}
 
-					// Build near the closest enemy structure
-					var closestEnemy = world.ActorsHavingTrait<Building>()
-						.Where(a => !a.Disposed && player.RelationshipWith(a.Owner) == PlayerRelationship.Enemy)
-						.ClosestToIgnoringPath(world.Map.CenterOfCell(baseBuilder.DefenseCenter));
+			foreach (var baseCenter in baseLocations)
+			{
+				switch (type)
+				{
+					case BuildingType.Defense:
 
-					var targetCell = closestEnemy != null ? closestEnemy.Location : baseCenter;
+						// Build near the closest enemy structure
+						var closestEnemy = world.ActorsHavingTrait<Building>()
+							.Where(a => !a.Disposed && player.RelationshipWith(a.Owner) == PlayerRelationship.Enemy)
+							.ClosestToIgnoringPath(world.Map.CenterOfCell(baseBuilder.DefenseCenter));
 
-					return FindPos(baseBuilder.DefenseCenter, targetCell, baseBuilder.Info.MinimumDefenseRadius, baseBuilder.Info.MaximumDefenseRadius);
+						var targetCell = closestEnemy != null ? closestEnemy.Location : baseCenter;
 
-				case BuildingType.Refinery:
+						// Defense placement is usually centered around DefenseCenter, but we use baseCenter as fallback target if no enemy.
+						// Note: If we really want to support multiple defense centers, that would require larger changes.
+						// For now, we return immediately for Defense as it uses global DefenseCenter.
+						return FindPos(baseBuilder.DefenseCenter, targetCell, baseBuilder.Info.MinimumDefenseRadius, baseBuilder.Info.MaximumDefenseRadius);
 
-					// Try and place the refinery near a resource field
-					if (resourceLayer != null)
-					{
-						var nearbyResources = world.Map.FindTilesInAnnulus(baseCenter, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius)
-							.Where(a => resourceLayer.GetResource(a).Type != null)
-							.Shuffle(world.LocalRandom).Take(baseBuilder.Info.MaxResourceCellsToCheck);
+					case BuildingType.Refinery:
 
-						foreach (var r in nearbyResources)
+						// Try and place the refinery near a resource field
+						if (resourceLayer != null)
 						{
-							var found = FindPos(baseCenter, r, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius);
-							if (found.Location != null)
-								return found;
+							var nearbyResources = world.Map.FindTilesInAnnulus(baseCenter, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius)
+								.Where(a => resourceLayer.GetResource(a).Type != null)
+								.Shuffle(world.LocalRandom).Take(baseBuilder.Info.MaxResourceCellsToCheck);
+
+							foreach (var r in nearbyResources)
+							{
+								var found = FindPos(baseCenter, r, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius);
+								if (found.Location != null)
+									return found;
+							}
 						}
-					}
 
-					// Try and find a free spot somewhere else in the base
-					return FindPos(baseCenter, baseCenter, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius);
+						// Try and find a free spot somewhere else in the base
+						var fallback = FindPos(baseCenter, baseCenter, baseBuilder.Info.MinBaseRadius, baseBuilder.Info.MaxBaseRadius);
+						if (fallback.Location != null)
+							return fallback;
+						break;
 
-				case BuildingType.Building:
-					return FindPos(baseCenter, baseCenter, baseBuilder.Info.MinBaseRadius,
-						distanceToBaseIsImportant ? baseBuilder.Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
+					case BuildingType.Building:
+						var building = FindPos(baseCenter, baseCenter, baseBuilder.Info.MinBaseRadius,
+							distanceToBaseIsImportant ? baseBuilder.Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
+						if (building.Location != null)
+							return building;
+						break;
+				}
 			}
 
 			// Can't find a build location

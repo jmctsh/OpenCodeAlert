@@ -74,7 +74,7 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly int InititalMinimumRefineryCount = 1;
 
 		[Desc("Number of refineries to build additionally after building a barracks.")]
-		public readonly int AdditionalMinimumRefineryCount = 1;
+		public readonly int AdditionalMinimumRefineryCount = 2;
 
 		[Desc("Additional delay (in ticks) between structure production checks when there is no active production.",
 			"StructureProductionRandomBonusDelay is added to this.")]
@@ -147,6 +147,14 @@ namespace OpenRA.Mods.Common.Traits
 				.RandomOrDefault(world.LocalRandom);
 
 			return randomConstructionYard?.Location ?? initialBaseCenter;
+		}
+
+		public IEnumerable<Actor> GetBaseActors()
+		{
+			if (constructionYardBuildings.Actors.Any())
+				return constructionYardBuildings.Actors;
+
+			return Enumerable.Empty<Actor>();
 		}
 
 		public CPos DefenseCenter { get; private set; }
@@ -319,10 +327,23 @@ namespace OpenRA.Mods.Common.Traits
 			AIUtils.CountActorByCommonName(powerBuildings) == 0 ||
 			AIUtils.CountActorByCommonName(constructionYardBuildings) == 0;
 
-		int MinimumRefineryCount() =>
-			AIUtils.CountActorByCommonName(barracksBuildings) > 0
-			? Info.InititalMinimumRefineryCount + Info.AdditionalMinimumRefineryCount
-			: Info.InititalMinimumRefineryCount;
+		public int MinimumRefineryCount()
+		{
+			var baseCount = System.Math.Max(1, AIUtils.CountActorByCommonName(constructionYardBuildings));
+			
+			// Start with initial count
+			var count = Info.InititalMinimumRefineryCount;
+			
+			// If we have barracks, add additional count
+			if (AIUtils.CountActorByCommonName(barracksBuildings) > 0)
+				count += Info.AdditionalMinimumRefineryCount;
+
+			// For every additional base beyond the first, add 3 refineries
+			if (baseCount > 1)
+				count += (baseCount - 1) * 3;
+
+			return count;
+		}
 
 		List<MiniYamlNode> IGameSaveTraitData.IssueTraitData(Actor self)
 		{

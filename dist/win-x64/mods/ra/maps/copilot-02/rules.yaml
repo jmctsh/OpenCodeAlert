@@ -1,0 +1,14 @@
+Player:
+	PlayerResources:
+		DefaultCash: 0
+
+World:
+	LuaScript:		
+		Scripts: campaign.lua, utils.lua, copilot02.lua
+	MissionData:
+		Briefing: Control Yak to reveal entire map, clear over 80% Fog of War within 100 seconds.
+		BriefingVideo: 
+		StartVideo: 
+		WinVideo: 
+		LossVideo: 
+

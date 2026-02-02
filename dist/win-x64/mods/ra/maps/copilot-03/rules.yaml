@@ -1,0 +1,14 @@
+Player:
+	PlayerResources:
+		DefaultCash: 10000
+
+World:
+	LuaScript:		
+		Scripts: campaign.lua, utils.lua, copilot03.lua
+	MissionData:
+		Briefing: Produce 10 Infantry, 10 Rocket Soldiers, 1 Ore Truck, and 1 Mobile Flak within 90 seconds.
+		BriefingVideo: 
+		StartVideo: 
+		WinVideo: 
+		LossVideo: 
+

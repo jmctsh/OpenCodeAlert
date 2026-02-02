@@ -1,0 +1,85 @@
+EditorUndo: Z Ctrl
+	Description: Undo
+	Types: Editor
+	Contexts: Editor
+	Platform:
+		OSX: Z Meta
+
+EditorRedo: Y Ctrl
+	Description: Redo
+	Types: Editor
+	Contexts: Editor
+	Platform:
+		OSX: Z Meta, Shift
+		Linux: Z Ctrl, Shift
+
+EditorCopy: C Ctrl
+	Description: Copy
+	Types: Editor
+	Contexts: Editor
+	Platform:
+		OSX: C Meta
+
+EditorQuickSave: S Ctrl
+	Description: Save Map
+	Types: Editor
+	Contexts: Editor
+	Platform:
+		OSX: S Meta
+
+EditorPaste: V Ctrl
+	Description: Paste
+	Types: Editor
+	Contexts: Editor
+	Platform:
+		OSX: V Meta
+
+EditorSelectTab: E
+	Description: Select Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorTilesTab: R
+	Description: Tiles Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorOverlaysTab: T
+	Description: Overlays Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorActorsTab: Y
+	Description: Actors Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorToolsTab: U
+	Description: Tools Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorHistoryTab: I
+	Description: History Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorSettingsTab: O
+	Description: Settings Tab
+	Types: Editor
+	Contexts: Editor
+
+EditorToggleGridOverlay: F1
+	Description: Grid Overlay
+	Types: Editor
+	Contexts: Editor
+
+EditorToggleBuildableOverlay: F2
+	Description: Buildable Terrain Overlay
+	Types: Editor
+	Contexts: Editor
+
+EditorToggleMarkerOverlay: F3
+	Description: Marker Layer Overlay
+	Types: Editor
+	Contexts: Editor
