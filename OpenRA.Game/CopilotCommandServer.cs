@@ -94,6 +94,11 @@ namespace OpenRA
 			{
 				["en"] = "Missing attackers or targets parameter",
 				["zh"] = "缺少attackers或targets参数"
+			},
+			["INVALID_PARAMS_EXPAND_BASE"] = new()
+			{
+				["en"] = "expand_base command does not accept parameters",
+				["zh"] = "expand_base命令不需要参数"
 			}
 		};
 

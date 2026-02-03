@@ -111,6 +111,8 @@ namespace OpenRA
                     return ValidateMoveActorParams(parameters);
                 case "attack":
                     return ValidateAttackParams(parameters);
+                case "expand_base":
+                    return ValidateExpandBaseParams(parameters);
                 // 添加更多命令的参数验证
                 default:
                     return (true, null);
@@ -161,6 +163,20 @@ namespace OpenRA
                 { 
                     Code = "MISSING_ATTACKERS_OR_TARGETS",
                     Message = "缺少attackers或targets参数"
+                });
+            }
+
+            return (true, null);
+        }
+
+        private static (bool isValid, MCPError error) ValidateExpandBaseParams(JObject parameters)
+        {
+            if (parameters != null && parameters.HasValues)
+            {
+                return (false, new MCPError
+                {
+                    Code = "INVALID_PARAMS_EXPAND_BASE",
+                    Message = "expand_base命令不需要参数"
                 });
             }
 

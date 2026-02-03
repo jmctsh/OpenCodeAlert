@@ -16,6 +16,7 @@ Player:
 		CannotPlaceNotification: BuildingCannotPlaceAudio
 		NewOptionsTextNotification: notification-new-construction-options
 		CannotPlaceTextNotification: notification-cannot-deploy-here
+	CopilotExpansionManager:
 	TechTree:
 	SupportPowerManager:
 	ScriptTriggers:

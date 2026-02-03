@@ -889,8 +889,8 @@ namespace OpenRA.Mods.Common.Commands
 			if (expansionManager == null)
 				return "Player does not have CopilotExpansionManager trait.";
 
-			expansionManager.StartExpansion(player);
-			return "Base expansion started.";
+			expansionManager.TryStartExpansion(player, out var message);
+			return message;
 		}
 
 		public static string PlaceBuildingCommand(JObject json, World world)
@@ -916,7 +916,7 @@ namespace OpenRA.Mods.Common.Commands
 			var buildingActor = validBuildings.FirstOrDefault().Actor;
 			ProductionQueue queue = validBuildings.FirstOrDefault().Queue;
 			var readyBuilding = queue.AllQueued().Any(item => item.Done);
-			if (readyBuilding == null)
+			if (!readyBuilding)
 				return "没有就绪的建筑可以放置";
 
 			var readyItem = queue.AllQueued().First(item => item.Done);

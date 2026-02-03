@@ -3,27 +3,47 @@ using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Graphics;
 using OpenRA.Traits;
+using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Mods.Common.Commands;
 
 namespace OpenRA.Mods.Common.Traits
 {
     [TraitLocation(SystemActors.Player)]
-    public class CopilotExpansionManagerInfo : TraitInfo<CopilotExpansionManager> { }
+    public class CopilotExpansionManagerInfo : TraitInfo
+    {
+        [Desc("Minimum distance in cells from center of the base when checking for MCV deployment location.")]
+        public readonly int MinBaseRadius = 2;
+
+        [Desc("Maximum distance in cells from center of the base when checking for MCV deployment location.",
+            "Only applies if RestrictMCVDeploymentFallbackToBase is enabled and there's at least one construction yard.")]
+        public readonly int MaxBaseRadius = 20;
+
+        [Desc("Should deployment of additional MCVs be restricted to MaxBaseRadius if explicit deploy locations are missing or occupied?")]
+        public readonly bool RestrictMCVDeploymentFallbackToBase = true;
+
+        [Desc("Minimum distance from existing bases for a new expansion.")]
+        public readonly int MinimumExpansionDistance = 30;
+
+        [Desc("Maximum distance from existing bases for a new expansion.")]
+        public readonly int MaximumExpansionDistance = 50;
+
+        public override object Create(ActorInitializer init) { return new CopilotExpansionManager(init.Self, this); }
+    }
 
     public class CopilotExpansionManager : ITick, IWorldLoaded
     {
+        public readonly CopilotExpansionManagerInfo Info;
         World world;
         Player player;
         IResourceLayer resourceLayer;
+        Dictionary<string, string> actorNameLookup;
 
         enum ExpansionState
         {
             Idle,
-            BuildingMCV,
             WaitingForMCV,
             MovingMCV,
-            DeployingMCV,
             WaitingForBase,
             BuildingPower,
             WaitingForPower,
@@ -35,7 +55,7 @@ namespace OpenRA.Mods.Common.Traits
 
         ExpansionState currentState = ExpansionState.Idle;
         int refineryCount = 0;
-        const int TargetRefineryCount = 3;
+        const int TargetRefineryCount = 2;
         
         Actor mcvActor;
         Actor newBaseActor;
@@ -45,26 +65,75 @@ namespace OpenRA.Mods.Common.Traits
         int waitTicks = 0;
 
         // Configurable names (could be moved to Info)
-        readonly string[] mcvNames = { "mcv" };
-        readonly string[] powerNames = { "powr", "apwr" };
-        readonly string[] refineryNames = { "proc" };
+        readonly string[] mcvNames = { "MCV" };
+        readonly string[] powerNames = { "POWR", "APWR", "PWR", "NUKR" };
+        readonly string[] refineryNames = { "PROC" };
+
+        CVec deployOffset = CVec.Zero;
+
+        public CopilotExpansionManager(Actor self, CopilotExpansionManagerInfo info)
+        {
+            Info = info;
+        }
 
         public void WorldLoaded(World w, WorldRenderer wr)
         {
             world = w;
+            actorNameLookup = world.Map.Rules.Actors.Keys
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(k => k, k => k, StringComparer.OrdinalIgnoreCase);
         }
 
-        public void StartExpansion(Player p)
+        public bool TryStartExpansion(Player p, out string message)
         {
+            if (world == null)
+            {
+                message = "World not initialized for expansion.";
+                return false;
+            }
+
+            if (p == null)
+            {
+                message = "Invalid player.";
+                return false;
+            }
+
             if (currentState != ExpansionState.Idle)
-                return;
+            {
+                message = "Base expansion already in progress.";
+                return false;
+            }
 
             player = p;
             resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
-            currentState = ExpansionState.BuildingMCV;
-            refineryCount = 0;
-            mcvActor = null;
-            newBaseActor = null;
+            deployOffset = CVec.Zero;
+
+            // Check for existing idle MCV first
+            var idleMcv = FindIdleMCV();
+            if (idleMcv != null)
+            {
+                currentState = ExpansionState.WaitingForMCV;
+                message = "已找到可用MCV，准备展开。";
+                waitTicks = 10;
+                return true;
+            }
+
+            // Start MCV production
+            if (!EnsureProduction(mcvNames, 1))
+            {
+                var mcvName = ResolveActorName(mcvNames.FirstOrDefault());
+                var missing = DescribeMissingPrerequisites(mcvName);
+                message = string.IsNullOrEmpty(missing)
+                    ? "无法开始建造MCV（可能是资金不足或缺少工厂）。"
+                    : $"无法开始建造MCV，缺少前置条件：{missing}";
+                currentState = ExpansionState.Idle;
+                return false;
+            }
+
+            currentState = ExpansionState.WaitingForMCV;
+            message = "已开始建造MCV，完成后将自动扩展基地。";
+            waitTicks = 50;
+            return true;
         }
 
         public void Tick(Actor self)
@@ -74,69 +143,61 @@ namespace OpenRA.Mods.Common.Traits
 
             switch (currentState)
             {
-                case ExpansionState.BuildingMCV:
-                    if (!StartProduction(mcvNames))
-                    {
-                        waitTicks = 50; // Retry later
-                        return;
-                    }
-                    currentState = ExpansionState.WaitingForMCV;
+                case ExpansionState.MovingMCV:
+                    // Should not be here if we skipped it, but kept for logic structure
                     break;
 
                 case ExpansionState.WaitingForMCV:
                     mcvActor = FindIdleMCV();
                     if (mcvActor != null)
                     {
-                        currentState = ExpansionState.MovingMCV;
-                    }
-                    else
-                    {
-                        waitTicks = 25;
-                    }
-                    break;
-
-                case ExpansionState.MovingMCV:
-                    if (deployLocation == CPos.Zero)
-                    {
-                        deployLocation = ChooseExpansionLocation();
-                        if (deployLocation == CPos.Zero)
+                        // Found an idle MCV (newly built or existing)
+                        // Use the ported AI logic for location selection
+                        var constructionYards = world.ActorsHavingTrait<BaseBuilding>()
+                            .Where(a => a.Owner == player);
+            
+                        var baseCount = constructionYards.Count();
+                        var restrictToBase = Info.RestrictMCVDeploymentFallbackToBase && baseCount > 0;
+                        var isExpansion = baseCount > 0;
+            
+                        var transformsInfo = mcvActor.Info.TraitInfo<TransformsInfo>();
+                        var desiredLocation = ChooseMcvDeployLocation(transformsInfo.IntoActor, transformsInfo.Offset, restrictToBase, isExpansion);
+            
+                        if (desiredLocation == null)
                         {
-                            // Failed to find location, abort or fallback
-                            // Fallback to random location near current base?
-                            // For now, just abort
-                            currentState = ExpansionState.Idle;
+                            // Keep waiting if we can't find a spot yet
+                            waitTicks = 50;
                             return;
                         }
-                    }
-
-                    if (mcvActor.Location == deployLocation)
-                    {
-                        currentState = ExpansionState.DeployingMCV;
+            
+                        deployLocation = desiredLocation.Value;
+            
+                        // Issue orders immediately to ensure they are sent
+                        // 1. Move
+                        world.IssueOrder(new Order("Move", mcvActor, Target.FromCell(world, deployLocation), false));
+                        // 2. DeployTransform (queued=true)
+                        world.IssueOrder(new Order("DeployTransform", mcvActor, true));
+            
+                        currentState = ExpansionState.WaitingForBase;
+                        refineryCount = 0;
+                        newBaseActor = null;
+                        waitTicks = 100; // Give time for moving and deploying
                     }
                     else
                     {
-                        // Keep ordering move until arrived
-                        world.IssueOrder(new Order("Move", mcvActor, Target.FromCell(world, deployLocation), false));
+                        // Still waiting for MCV to be produced
                         waitTicks = 25;
                     }
-                    break;
-
-                case ExpansionState.DeployingMCV:
-                    if (mcvActor.IsDead)
-                    {
-                        currentState = ExpansionState.Idle; // MCV died
-                        return;
-                    }
-                    
-                    world.IssueOrder(new Order("DeployTransform", mcvActor, false));
-                    currentState = ExpansionState.WaitingForBase;
-                    waitTicks = 50; // Give time to transform
                     break;
 
                 case ExpansionState.WaitingForBase:
                     // Find the new base building at the deploy location
-                    newBaseActor = world.ActorMap.GetActorsAt(deployLocation)
-                        .FirstOrDefault(a => a.Owner == player && a.Info.HasTraitInfo<BuildingInfo>());
+                    // We check radius 4 around the expected location
+                    var expectedLocation = deployLocation + deployOffset;
+                    newBaseActor = world.ActorsHavingTrait<BaseProvider>()
+                            .Where(a => a.Owner == player)
+                            .OrderBy(a => (a.Location - expectedLocation).LengthSquared)
+                            .FirstOrDefault(a => (a.Location - expectedLocation).LengthSquared <= 16); // slightly increased radius
                     
                     if (newBaseActor != null)
                     {
@@ -144,12 +205,23 @@ namespace OpenRA.Mods.Common.Traits
                     }
                     else
                     {
-                        waitTicks = 25;
+                        // Keep waiting if MCV is still moving/deploying
+                        if (mcvActor != null && !mcvActor.IsDead)
+                        {
+                             // If MCV is idle but not at location, maybe it got stuck? Resend move?
+                             // For now just wait.
+                             waitTicks = 25;
+                        }
+                        else
+                        {
+                             // MCV is gone (deployed or dead), but no base yet?
+                             waitTicks = 25;
+                        }
                     }
                     break;
 
                 case ExpansionState.BuildingPower:
-                    if (!StartProduction(powerNames))
+                    if (!EnsureProduction(powerNames, 1))
                     {
                         waitTicks = 50;
                         return;
@@ -186,7 +258,16 @@ namespace OpenRA.Mods.Common.Traits
                         return;
                     }
 
-                    if (!StartProduction(refineryNames))
+                    // Check if queue has a Done item of this type (meaning previous placement pending)
+                    if (IsItemReady(refineryNames))
+                    {
+                         // Still waiting for previous item to be removed from queue
+                         waitTicks = 25;
+                         return;
+                    }
+
+                    int needed = TargetRefineryCount - refineryCount;
+                    if (!EnsureProduction(refineryNames, needed))
                     {
                         waitTicks = 50;
                         return;
@@ -219,19 +300,99 @@ namespace OpenRA.Mods.Common.Traits
             }
         }
 
-        bool StartProduction(string[] types)
+        // --- Ported from McvManagerBotModule ---
+
+        CPos GetRandomBaseCenter()
         {
-            var queue = FindQueueFor(types);
+            var constructionYards = world.ActorsHavingTrait<BaseBuilding>()
+                .Where(a => a.Owner == player)
+                .ToList();
+                
+            var randomConstructionYard = constructionYards.RandomOrDefault(world.LocalRandom);
+            return randomConstructionYard?.Location ?? player.PlayerActor.Location;
+        }
+
+        CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant, bool isExpansion)
+        {
+            var actorInfo = world.Map.Rules.Actors[actorType];
+            var bi = actorInfo.TraitInfoOrDefault<BuildingInfo>();
+            if (bi == null)
+                return null;
+
+            // Find the buildable cell that is closest to pos and centered around center
+            CPos? FindPos(CPos center, CPos target, int minRange, int maxRange)
+            {
+                var cells = world.Map.FindTilesInAnnulus(center, minRange, maxRange);
+
+                // Sort by distance to target if we have one
+                if (center != target)
+                    cells = cells.OrderBy(c => (c - target).LengthSquared);
+                else
+                    cells = cells.Shuffle(world.LocalRandom);
+
+                foreach (var cell in cells)
+                    if (world.CanPlaceBuilding(cell + offset, actorInfo, bi, null))
+                        return cell;
+
+                return null;
+            }
+
+            var baseCenter = GetRandomBaseCenter();
+            var targetCenter = baseCenter;
+            var minRange = Info.MinBaseRadius;
+            var maxRange = distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange;
+
+            if (isExpansion && resourceLayer != null)
+            {
+                // Find a resource patch that is far enough from existing bases
+                var existingBases = world.ActorsHavingTrait<BaseBuilding>()
+                    .Where(a => a.Owner == player)
+                    .Select(a => a.Location).ToList();
+
+                var maxSearchRadius = Math.Min(Info.MaximumExpansionDistance, world.Map.Grid.MaximumTileSearchRange);
+                var minSearchRadius = Math.Min(Info.MinimumExpansionDistance, maxSearchRadius);
+
+                var potentialResourceTiles = world.Map.FindTilesInAnnulus(baseCenter, minSearchRadius, maxSearchRadius)
+                    .Where(c => resourceLayer.GetResource(c).Type != null)
+                    .Shuffle(world.LocalRandom)
+                    .Take(20);
+
+                foreach (var tile in potentialResourceTiles)
+                {
+                    // Ensure this tile is far from ALL existing bases
+                    if (existingBases.All(baseLoc => (tile - baseLoc).LengthSquared >= Info.MinimumExpansionDistance * Info.MinimumExpansionDistance))
+                    {
+                        targetCenter = tile;
+                        minRange = 2; // Close to resources
+                        maxRange = 10;
+                        break;
+                    }
+                }
+            }
+
+            return FindPos(targetCenter, targetCenter, minRange, maxRange);
+        }
+
+        // --- Helpers ---
+
+        bool EnsureProduction(string[] types, int quantity)
+        {
+            var typesSet = new HashSet<string>(types, StringComparer.OrdinalIgnoreCase);
+            var item = types.Select(ResolveActorName).FirstOrDefault(name => name != null);
+            if (item == null)
+                return false;
+
+            var queue = FindQueueForActor(item);
             if (queue == null) return false;
 
-            var item = types.FirstOrDefault(t => world.Map.Rules.Actors.ContainsKey(t));
-            if (item == null) return false;
+            // Check how many are already queued or being built
+            var currentQueued = queue.AllQueued().Count(i => typesSet.Contains(i.Item));
+            var toBuild = quantity - currentQueued;
 
-            // Check if already producing
-            if (queue.AllQueued().Any(i => types.Contains(i.Item)))
-                return true;
-
-            world.IssueOrder(Order.StartProduction(queue.Actor, item, 1));
+            if (toBuild > 0)
+            {
+                world.IssueOrder(Order.StartProduction(queue.Actor, item, toBuild));
+            }
             return true;
         }
 
@@ -239,11 +400,13 @@ namespace OpenRA.Mods.Common.Traits
         {
             var queue = FindQueueFor(types);
             if (queue == null) return false;
-            return queue.AllQueued().Any(i => types.Contains(i.Item) && i.Done);
+            var typesSet = new HashSet<string>(types, StringComparer.OrdinalIgnoreCase);
+            return queue.AllQueued().Any(i => typesSet.Contains(i.Item) && i.Done);
         }
 
         ProductionQueue FindQueueFor(string[] types)
         {
+            var typesSet = new HashSet<string>(types, StringComparer.OrdinalIgnoreCase);
             var queues = world.ActorsWithTrait<ProductionQueue>()
                 .Where(a => a.Actor.Owner == player)
                 .Select(a => a.Trait);
@@ -251,7 +414,7 @@ namespace OpenRA.Mods.Common.Traits
             foreach (var q in queues)
             {
                 var buildable = q.BuildableItems();
-                if (buildable.Any(b => types.Contains(b.Name)))
+                if (buildable.Any(b => typesSet.Contains(b.Name)))
                     return q;
             }
             return null;
@@ -259,8 +422,9 @@ namespace OpenRA.Mods.Common.Traits
 
         Actor FindIdleMCV()
         {
+            var typesSet = new HashSet<string>(mcvNames, StringComparer.OrdinalIgnoreCase);
             return world.ActorsHavingTrait<Transforms>()
-                .FirstOrDefault(a => a.Owner == player && a.IsIdle && mcvNames.Contains(a.Info.Name));
+                .FirstOrDefault(a => a.Owner == player && a.IsIdle && typesSet.Contains(a.Info.Name));
         }
 
         bool PlaceBuilding(string[] types, CPos near)
@@ -268,7 +432,8 @@ namespace OpenRA.Mods.Common.Traits
             var queue = FindQueueFor(types);
             if (queue == null) return false;
 
-            var item = queue.AllQueued().FirstOrDefault(i => types.Contains(i.Item) && i.Done);
+            var typesSet = new HashSet<string>(types, StringComparer.OrdinalIgnoreCase);
+            var item = queue.AllQueued().FirstOrDefault(i => typesSet.Contains(i.Item) && i.Done);
             if (item == null) return false;
 
             var actorInfo = world.Map.Rules.Actors[item.Item];
@@ -303,42 +468,64 @@ namespace OpenRA.Mods.Common.Traits
             return null;
         }
 
-        CPos ChooseExpansionLocation()
+        ProductionQueue FindQueueForActor(string actorName)
         {
-            if (resourceLayer == null) return CPos.Zero;
+            if (world == null || player == null)
+                return null;
 
-            var baseCenter = player.PlayerActor.Location; // Or average of bases
-            var bases = world.ActorsHavingTrait<BaseProvider>().Where(a => a.Owner == player).ToList();
-            if (bases.Any())
-                baseCenter = bases.First().Location;
+            if (!world.Map.Rules.Actors.TryGetValue(actorName, out var actorInfo))
+                return null;
 
-            var potentialTiles = world.Map.FindTilesInAnnulus(baseCenter, 30, 50)
-                .Where(c => resourceLayer.GetResource(c).Type != null)
-                .Shuffle(world.LocalRandom)
-                .Take(20);
+            var buildable = actorInfo.TraitInfoOrDefault<BuildableInfo>();
+            if (buildable == null)
+                return null;
 
-            var mcvInfo = world.Map.Rules.Actors[mcvNames[0]];
-            var transforms = mcvInfo.TraitInfo<TransformsInfo>();
-            var buildingInfo = world.Map.Rules.Actors[transforms.IntoActor].TraitInfo<BuildingInfo>();
-
-            foreach (var tile in potentialTiles)
+            foreach (var queueType in buildable.Queue)
             {
-                // Try to find a buildable spot near the resource
-                // Increase search radius to improve chances of finding a valid spot
-                foreach (var cell in world.Map.FindTilesInAnnulus(tile, 2, 10))
-                {
-                    // Ensure the location is not too close to existing bases to encourage actual expansion
-                    if (bases.Any(b => (b.Location - cell).LengthSquared < 30 * 30))
-                        continue;
-
-                    if (world.CanPlaceBuilding(cell, world.Map.Rules.Actors[transforms.IntoActor], buildingInfo, null))
-                    {
-                        return cell;
-                    }
-                }
+                var queue = AIUtils.FindQueues(player, queueType)
+                    .FirstOrDefault(q => q.CanBuild(actorInfo));
+                if (queue != null)
+                    return queue;
             }
 
-            return CPos.Zero;
+            return null;
+        }
+
+        string ResolveActorName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || actorNameLookup == null)
+                return null;
+
+            return actorNameLookup.TryGetValue(name, out var resolved) ? resolved : null;
+        }
+
+        string DescribeMissingPrerequisites(string actorName)
+        {
+            if (string.IsNullOrEmpty(actorName))
+                return null;
+
+            if (!world.Map.Rules.Actors.TryGetValue(actorName, out var actorInfo))
+                return null;
+
+            var bi = actorInfo.TraitInfoOrDefault<BuildableInfo>();
+            if (bi == null || bi.Prerequisites == null || bi.Prerequisites.Length == 0)
+                return null;
+
+            var tech = player.PlayerActor.TraitOrDefault<TechTree>();
+            if (tech == null)
+                return null;
+
+            var needed = bi.Prerequisites
+                .Where(p => !p.StartsWith("!"))
+                .Select(p => p.Replace("~", ""))
+                .Where(p => !tech.HasPrerequisites(new[] { p }))
+                .Distinct()
+                .ToList();
+
+            if (needed.Count == 0)
+                return null;
+
+            return string.Join(", ", needed);
         }
     }
 }
