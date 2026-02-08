@@ -40,6 +40,14 @@ namespace OpenRA.Server
 			var engineDirArg = arguments.GetValue("Engine.EngineDir", null);
 			if (!string.IsNullOrEmpty(engineDirArg))
 				Platform.OverrideEngineDir(engineDirArg);
+			else
+			{
+				var binDir = Platform.BinDir;
+				var binMods = Path.Combine(binDir, "mods");
+				var parentMods = Path.Combine(binDir, "..", "mods");
+				if (!Directory.Exists(binMods) && Directory.Exists(parentMods))
+					Platform.OverrideEngineDir(Path.GetFullPath(Path.Combine(binDir, "..")));
+			}
 
 			var supportDirArg = arguments.GetValue("Engine.SupportDir", null);
 			if (!string.IsNullOrEmpty(supportDirArg))
@@ -51,14 +59,21 @@ namespace OpenRA.Server
 			Log.AddChannel("nat", "dedicated-nat.log", true);
 			Log.AddChannel("geoip", "dedicated-geoip.log", true);
 
-			// Special case handling of Game.Mod argument: if it matches a real filesystem path
-			// then we use this to override the mod search path, and replace it with the mod id
-			var modID = arguments.GetValue("Game.Mod", null);
-			var explicitModPaths = Array.Empty<string>();
+			var modID = arguments.GetValue("Game.Mod", "copilot");
+			var explicitModPaths = new List<string>();
 			if (modID != null && (File.Exists(modID) || Directory.Exists(modID)))
 			{
-				explicitModPaths = new[] { modID };
+				explicitModPaths.Add(modID);
 				modID = Path.GetFileNameWithoutExtension(modID);
+			}
+
+			if (modID == "copilot")
+			{
+				var copilotPath = Path.Combine(Platform.EngineDir, "mods", "copilot");
+				if (Directory.Exists(copilotPath))
+				{
+					explicitModPaths.Add(copilotPath);
+				}
 			}
 
 			if (modID == null)
