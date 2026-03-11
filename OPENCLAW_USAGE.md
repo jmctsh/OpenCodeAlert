@@ -35,7 +35,98 @@ def join_server():
 
 ---
 
-## 2. 房间控制 API (Lobby API)
+## 2. Linux 服务器部署指南 (Headless Mode)
+
+在 Linux 服务器上运行游戏客户端通常需要图形界面支持。为了在纯命令行环境（Headless Server）中运行 OpenClaw，你需要使用 `Xvfb` 来模拟显示环境。
+
+### 2.1 依赖安装
+
+在 Debian/Ubuntu 系统上，你需要安装 Mono 运行时和 Xvfb：
+
+```bash
+# 安装 Mono (OpenRA 运行环境)
+sudo apt update
+sudo apt install mono-complete
+
+# 安装 Xvfb (虚拟显示服务)
+sudo apt install xvfb
+```
+
+### 2.2 获取游戏本体
+
+OpenClaw 需要完整的 OpenRA 游戏文件才能运行。
+
+**源码编译步骤**：
+
+1.  **安装构建依赖** (Ubuntu/Debian)
+    ```bash
+    # 安装 git, make, unzip
+    sudo apt install git make unzip
+    
+    # 安装 .NET SDK (用于编译)
+    # 参考: https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu
+    sudo apt-get update && \
+    sudo apt-get install -y dotnet-sdk-6.0
+    ```
+
+2.  **拉取代码**
+    ```bash
+    git clone -b dev https://github.com/jmctsh/OpenCodeAlert.git
+    cd OpenCodeAlert
+    ```
+
+3.  **编译与资源下载**
+    ```bash
+    # 下载依赖库并编译
+    make all
+    
+    # 这一步会自动下载必要的资源文件
+    ```
+
+
+### 2.3 启动脚本 (Headless Launch)
+
+使用 `xvfb-run` 命令来启动游戏客户端，这样它就不会因为找不到显示器而报错。
+
+```bash
+# 在 Linux 服务器上运行
+xvfb-run -a ./launch-game.sh Game.Mod=copilot Launch.Connect=115.191.61.19:27940
+```
+
+*   `-a`: 自动寻找可用的显示编号。
+*   `./launch-game.sh`: 确保该脚本有执行权限 (`chmod +x launch-game.sh`)。
+
+### 2.4 Python 集成示例
+
+你的 Python 脚本也应该通过 `xvfb-run` 来启动游戏进程：
+
+```python
+import subprocess
+import os
+
+def join_server_headless():
+    # 确保使用 Linux 启动脚本
+    game_executable = "./launch-game.sh"
+    
+    # 构建启动命令，前缀加上 xvfb-run
+    cmd = [
+        "xvfb-run", "-a",
+        game_executable, 
+        "Game.Mod=copilot", 
+        "Launch.Connect=115.191.61.19:27940"
+    ]
+    
+    # 启动进程
+    print(f"Starting OpenRA headless: {' '.join(cmd)}")
+    subprocess.Popen(cmd)
+
+if __name__ == "__main__":
+    join_server_headless()
+```
+
+---
+
+## 3. 房间控制 API (Lobby API)
 
 当 OpenClaw 进入房间（Lobby）后，客户端会开启一个 TCP 监听端口（默认 **7446**），允许外部程序通过 JSON 指令控制房间设置。
 
@@ -43,7 +134,7 @@ def join_server():
 *   **协议**: TCP / JSON
 *   **编码**: UTF-8
 
-### 2.1 请求格式 (Request)
+### 3.1 请求格式 (Request)
 
 ```json
 {
@@ -56,7 +147,7 @@ def join_server():
 }
 ```
 
-### 2.2 响应格式 (Response)
+### 3.2 响应格式 (Response)
 
 ```json
 {
@@ -73,9 +164,9 @@ def join_server():
 
 ---
 
-## 3. 可用指令列表
+## 4. 可用指令列表
 
-### 3.1 基础控制
+### 4.1 基础控制
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -85,7 +176,7 @@ def join_server():
 | `set_spectator` | `{}` | 切换为观察者 |
 | `set_ready` | `{"ready": true}` | 设置准备状态 (true/false) |
 
-### 3.2 房主专用 (Host Only)
+### 4.2 房主专用 (Host Only)
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -96,7 +187,7 @@ def join_server():
 | `kick` | `{"clientIndex": 1}` | 踢出玩家 |
 | `start_game` | `{}` | 开始游戏 |
 
-### 3.3 查询
+### 4.3 查询
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -104,7 +195,7 @@ def join_server():
 
 ---
 
-## 4. Python 调用示例
+## 5. Python 调用示例
 
 ```python
 import socket
