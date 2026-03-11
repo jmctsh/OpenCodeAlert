@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Graphics;
+using OpenRA;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Network;
 using OpenRA.Traits;
@@ -68,6 +69,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		readonly bool skirmishMode;
 		readonly Ruleset modRules;
 		readonly WebServices services;
+		readonly LobbyCommandServer lobbyServer;
 
 		enum PanelType { Players, Options, Music, Servers, Kick, ForceStart }
 		PanelType panel = PanelType.Players;
@@ -162,6 +164,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			modRules = modData.DefaultRules;
 
 			services = modData.Manifest.Get<WebServices>();
+
+			lobbyServer = new LobbyCommandServer(7446, orderManager);
+			LobbyCommands.Register(lobbyServer);
+			lobbyServer.Start();
 
 			Game.LobbyInfoChanged += UpdateCurrentMap;
 			Game.LobbyInfoChanged += UpdatePlayerList;
@@ -570,6 +576,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (disposing && !disposed)
 			{
 				disposed = true;
+				lobbyServer?.End();
 				Game.LobbyInfoChanged -= UpdateCurrentMap;
 				Game.LobbyInfoChanged -= UpdatePlayerList;
 				Game.LobbyInfoChanged -= UpdateDiscordStatus;
