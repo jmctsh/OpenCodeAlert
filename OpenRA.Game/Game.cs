@@ -184,6 +184,7 @@ namespace OpenRA
 
 		public static void RemoteDirectConnect(ConnectionTarget endpoint)
 		{
+			JoinServer(endpoint, "");
 			OnRemoteDirectConnect(endpoint);
 		}
 
