@@ -118,6 +118,8 @@ namespace OpenRA
 				LobbyServer = new LobbyCommandServer(7446, OrderManager);
 				LobbyServer.Start();
 			}
+			else
+				LobbyServer.UpdateOrderManager(OrderManager);
 
 			return om;
 		}

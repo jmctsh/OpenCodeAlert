@@ -168,12 +168,14 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (Game.LobbyServer == null)
 			{
 				lobbyServer = new LobbyCommandServer(7446, orderManager);
+				Game.LobbyServer = lobbyServer;
 				LobbyCommands.Register(lobbyServer);
 				lobbyServer.Start();
 			}
 			else
 			{
 				lobbyServer = Game.LobbyServer;
+				lobbyServer.UpdateOrderManager(orderManager);
 				LobbyCommands.Register(lobbyServer);
 			}
 
@@ -584,7 +586,6 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (disposing && !disposed)
 			{
 				disposed = true;
-				lobbyServer?.End();
 				Game.LobbyInfoChanged -= UpdateCurrentMap;
 				Game.LobbyInfoChanged -= UpdatePlayerList;
 				Game.LobbyInfoChanged -= UpdateDiscordStatus;

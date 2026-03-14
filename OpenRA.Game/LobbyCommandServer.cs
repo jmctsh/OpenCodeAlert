@@ -15,7 +15,7 @@ namespace OpenRA
 	{
 		Socket serverSocket;
 		readonly int port;
-		readonly OrderManager orderManager;
+		OrderManager orderManager;
 		bool isRunning;
 		public const string CurrentApiVersion = "1.0";
 
@@ -79,6 +79,11 @@ namespace OpenRA
 		public LobbyCommandServer(int port, OrderManager orderManager)
 		{
 			this.port = port;
+			this.orderManager = orderManager;
+		}
+
+		public void UpdateOrderManager(OrderManager orderManager)
+		{
 			this.orderManager = orderManager;
 		}
 
@@ -291,11 +296,22 @@ namespace OpenRA
 					if (request.Params == null)
 						request.Params = new JObject();
 
+					var currentOrderManager = orderManager;
+					if (currentOrderManager == null)
+					{
+						SendErrorResponse(clientSocket, new MCPError
+						{
+							Code = MCPErrorCodes.InternalError,
+							Message = GetErrorMessage("INTERNAL_ERROR", language)
+						}, request.RequestId, DebugMode);
+						return;
+					}
+
 					if (CommandHandlers.TryGetValue(request.Command, out var commandHandler))
 					{
 						try
 						{
-							var result = commandHandler?.Invoke(request.Params, orderManager);
+							var result = commandHandler?.Invoke(request.Params, currentOrderManager);
 							SendSuccessResponse(clientSocket, result, request.RequestId, null, DebugMode);
 						}
 						catch (Exception ex)
@@ -319,7 +335,7 @@ namespace OpenRA
 					{
 						try
 						{
-							var resultJson = queryHandler?.Invoke(request.Params, orderManager);
+							var resultJson = queryHandler?.Invoke(request.Params, currentOrderManager);
 							SendSuccessResponse(clientSocket, null, request.RequestId, resultJson, DebugMode);
 						}
 						catch (Exception ex)

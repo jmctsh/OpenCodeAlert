@@ -58,7 +58,7 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 		
 		public static string SetSpectator(JObject json, OrderManager orderManager)
 		{
-			orderManager.IssueOrder(Order.Command("spectator"));
+			orderManager.IssueOrder(Order.Command("spectate"));
 			return "Spectator set order issued";
 		}
 
