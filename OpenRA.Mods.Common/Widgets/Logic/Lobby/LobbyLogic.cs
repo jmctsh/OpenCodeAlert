@@ -165,9 +165,17 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 			services = modData.Manifest.Get<WebServices>();
 
-			lobbyServer = new LobbyCommandServer(7446, orderManager);
-			LobbyCommands.Register(lobbyServer);
-			lobbyServer.Start();
+			if (Game.LobbyServer == null)
+			{
+				lobbyServer = new LobbyCommandServer(7446, orderManager);
+				LobbyCommands.Register(lobbyServer);
+				lobbyServer.Start();
+			}
+			else
+			{
+				lobbyServer = Game.LobbyServer;
+				LobbyCommands.Register(lobbyServer);
+			}
 
 			Game.LobbyInfoChanged += UpdateCurrentMap;
 			Game.LobbyInfoChanged += UpdatePlayerList;

@@ -75,6 +75,8 @@ namespace OpenRA
 		internal static OrderManager OrderManager;
 		static Server.Server server;
 
+		public static LobbyCommandServer LobbyServer;
+
 		public static MersenneTwister CosmeticRandom = new(); // not synced
 
 		public static Renderer Renderer;
@@ -110,6 +112,12 @@ namespace OpenRA
 
 			lastConnectionState = ConnectionState.PreConnecting;
 			ConnectionStateChanged(OrderManager, password, newConnection);
+
+			if (LobbyServer == null)
+			{
+				LobbyServer = new LobbyCommandServer(7446, OrderManager);
+				LobbyServer.Start();
+			}
 
 			return om;
 		}
