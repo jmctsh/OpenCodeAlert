@@ -12,14 +12,32 @@ set -o errexit || exit $?
 HERE=$(dirname "$0")
 cd "${HERE}"
 
+GEOIP_FILE="IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+GEOIP_URL="https://github.com/OpenRA/GeoIP-Database/releases/download/monthly/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+TIMEOUT_SECONDS=30
+
 # Database does not exist or is older than 30 days.
-if [ -z "$(find . -path ./IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP -mtime -30 -print)" ]; then
-	rm -f IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP || :
-	echo "Downloading IP2Location GeoIP database."
+if [ -z "$(find . -path ./${GEOIP_FILE} -mtime -30 -print)" ]; then
+	rm -f "${GEOIP_FILE}" || :
+	echo "Downloading IP2Location GeoIP database (timeout: ${TIMEOUT_SECONDS}s)..."
+	
+	DOWNLOAD_SUCCESS=0
+	
 	if command -v curl >/dev/null 2>&1; then
-		curl -s -L -O https://github.com/OpenRA/GeoIP-Database/releases/download/monthly/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP || echo "Warning: Download failed"
-	else
-		wget -cq https://github.com/OpenRA/GeoIP-Database/releases/download/monthly/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP || echo "Warning: Download failed"
+		if curl --connect-timeout ${TIMEOUT_SECONDS} --max-time $((TIMEOUT_SECONDS * 2)) -s -L -o "${GEOIP_FILE}" "${GEOIP_URL}" 2>/dev/null; then
+			DOWNLOAD_SUCCESS=1
+		fi
+	elif command -v wget >/dev/null 2>&1; then
+		if wget --timeout=${TIMEOUT_SECONDS} -q -O "${GEOIP_FILE}" "${GEOIP_URL}" 2>/dev/null; then
+			DOWNLOAD_SUCCESS=1
+		fi
+	fi
+	
+	if [ "${DOWNLOAD_SUCCESS}" -eq 0 ]; then
+		echo "Warning: GeoIP database download failed or timed out."
+		echo "         Server will run without GeoIP country lookup."
+		echo "         You can manually download from: ${GEOIP_URL}"
+		rm -f "${GEOIP_FILE}" || :
 	fi
 fi
 # changeCR2LF
