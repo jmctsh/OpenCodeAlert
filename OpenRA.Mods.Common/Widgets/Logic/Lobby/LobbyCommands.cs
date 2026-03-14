@@ -8,6 +8,18 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 {
 	public static class LobbyCommands
 	{
+		static int ResolveClientIndex(JObject json, OrderManager orderManager)
+		{
+			var index = json["clientIndex"]?.ToObject<int>();
+			if (index != null)
+				return index.Value;
+
+			if (orderManager.LocalClient == null)
+				throw new InvalidOperationException("Local client not found");
+
+			return orderManager.LocalClient.Index;
+		}
+
 		public static void Register(LobbyCommandServer server)
 		{
 			server.CommandHandlers["set_faction"] = SetFaction;
@@ -31,8 +43,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (string.IsNullOrEmpty(faction))
 				throw new ArgumentException("Missing faction parameter");
 
-			// Validate faction? orderManager will likely ignore invalid ones or handle it.
-			orderManager.IssueOrder(Order.Command($"faction {faction}"));
+			var clientIndex = ResolveClientIndex(json, orderManager);
+			orderManager.IssueOrder(Order.Command($"faction {clientIndex} {faction}"));
 			return "Faction set order issued";
 		}
 
@@ -42,7 +54,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (team == null)
 				throw new ArgumentException("Missing team parameter");
 
-			orderManager.IssueOrder(Order.Command($"team {team}"));
+			var clientIndex = ResolveClientIndex(json, orderManager);
+			orderManager.IssueOrder(Order.Command($"team {clientIndex} {team.Value}"));
 			return "Team set order issued";
 		}
 
@@ -52,7 +65,8 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 			if (spawn == null)
 				throw new ArgumentException("Missing spawn parameter");
 
-			orderManager.IssueOrder(Order.Command($"spawn {spawn}"));
+			var clientIndex = ResolveClientIndex(json, orderManager);
+			orderManager.IssueOrder(Order.Command($"spawn {clientIndex} {spawn.Value}"));
 			return "Spawn set order issued";
 		}
 		
@@ -64,41 +78,10 @@ namespace OpenRA.Mods.Common.Widgets.Logic
 
 		public static string SetReady(JObject json, OrderManager orderManager)
 		{
-			var ready = json["ready"]?.ToObject<bool>();
-			if (ready == null)
-			{
-				// Toggle if not specified, but let's be explicit
-				// Actually the command is just "ready" which toggles.
-				// If we want to enforce state, we need to check current state.
-				var client = orderManager.LocalClient;
-				if (client != null)
-				{
-					if (client.IsReady != true) // If not ready, toggle to ready
-					{
-						orderManager.IssueOrder(Order.Command("ready"));
-						return "Ready toggled";
-					}
-					else
-					{
-						return "Already ready";
-					}
-				}
-				orderManager.IssueOrder(Order.Command("ready"));
-				return "Ready toggled";
-			}
-
-			var clientState = orderManager.LocalClient;
-			if (clientState != null)
-			{
-				if (clientState.IsReady != ready.Value)
-				{
-					orderManager.IssueOrder(Order.Command("ready"));
-					return $"Ready set to {ready.Value}";
-				}
-				return $"Ready already {ready.Value}";
-			}
-			
-			return "Local client not found";
+			var ready = json["ready"]?.ToObject<bool>() ?? true;
+			var state = ready ? Session.ClientState.Ready : Session.ClientState.NotReady;
+			orderManager.IssueOrder(Order.Command($"state {state}"));
+			return $"Ready state set to {ready}";
 		}
 
 		public static string StartGame(JObject json, OrderManager orderManager)
