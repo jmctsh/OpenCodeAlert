@@ -170,9 +170,9 @@ if __name__ == "__main__":
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
-| `set_faction` | `{"faction": "soviet"}` | 设置己方阵营 (soviet, allies) |
+| `set_faction` | `{"faction": "russia"}` | 设置国家 (`russia`=苏联阵营, `germany`=盟军阵营) |
 | `set_team` | `{"team": 1}` | 设置队伍 (0=无队伍, 1-4=队伍) |
-| `set_spawn` | `{"spawn": 0}` | 设置出生点 (0-N) |
+| `set_spawn` | `{"spawn": 0}` | 设置出生点 (0=随机, 1=出生点A, 2=出生点B, 以此类推) |
 | `set_spectator` | `{}` | 切换为观察者 |
 | `set_ready` | `{"ready": true}` | 设置准备状态 (true/false) |
 
@@ -232,8 +232,8 @@ if __name__ == "__main__":
     info = api.send_command("get_lobby_info")
     print("房间信息:", json.dumps(info, indent=2, ensure_ascii=False))
     
-    # 2. 选择苏联阵营
-    api.send_command("set_faction", {"faction": "soviet"})
+    # 2. 选择苏联阵营国家（russia）
+    api.send_command("set_faction", {"faction": "russia"})
     
     # 3. 选择队伍 1
     api.send_command("set_team", {"team": 1})
