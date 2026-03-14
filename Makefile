@@ -145,6 +145,9 @@ test: all
 	@echo
 	@echo "Testing Red Alert mod MiniYAML..."
 	@./utility.sh ra --check-yaml
+	@echo
+	@echo "Testing Copilot mod MiniYAML..."
+	@./utility.sh copilot --check-yaml
 
 tests:
 	@dotnet build OpenRA.Test/OpenRA.Test.csproj -c Debug --nologo -p:TargetPlatform=$(TARGETPLATFORM)
@@ -153,16 +156,16 @@ tests:
 
 ############# LOCAL INSTALLATION AND DOWNSTREAM PACKAGING ##############
 #
-version: VERSION mods/ra/mod.yaml mods/cnc/mod.yaml mods/d2k/mod.yaml mods/ts/mod.yaml mods/modcontent/mod.yaml mods/all/mod.yaml
+version: VERSION mods/ra/mod.yaml mods/cnc/mod.yaml mods/d2k/mod.yaml mods/ts/mod.yaml mods/modcontent/mod.yaml mods/all/mod.yaml mods/copilot/mod.yaml
 ifeq ($(VERSION),)
 	$(error Unable to determine new version (requires git or override of variable VERSION))
 endif
 	@sh -c '. ./packaging/functions.sh; set_engine_version "$(VERSION)" .'
-	@sh -c '. ./packaging/functions.sh; set_mod_version "$(VERSION)" mods/ra/mod.yaml mods/cnc/mod.yaml mods/d2k/mod.yaml mods/ts/mod.yaml mods/modcontent/mod.yaml mods/all/mod.yaml'
+	@sh -c '. ./packaging/functions.sh; set_mod_version "$(VERSION)" mods/ra/mod.yaml mods/cnc/mod.yaml mods/d2k/mod.yaml mods/ts/mod.yaml mods/modcontent/mod.yaml mods/all/mod.yaml mods/copilot/mod.yaml'
 
 install:
 	@sh -c '. ./packaging/functions.sh; install_assemblies $(CWD) $(DESTDIR)$(gameinstalldir) $(TARGETPLATFORM) $(RUNTIME) True True True'
-	@sh -c '. ./packaging/functions.sh; install_data $(CWD) $(DESTDIR)$(gameinstalldir) cnc d2k ra'
+	@sh -c '. ./packaging/functions.sh; install_data $(CWD) $(DESTDIR)$(gameinstalldir) copilot cnc d2k ra'
 
 install-linux-shortcuts:
 	@sh -c '. ./packaging/functions.sh; install_linux_shortcuts $(CWD) "$(DESTDIR)" "$(gameinstalldir)" "$(bindir)" "$(datadir)" "$(shell head -n1 VERSION)" cnc d2k ra'
