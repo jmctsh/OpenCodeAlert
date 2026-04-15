@@ -1,108 +1,98 @@
-# OpenClaw 使用说明文档
+# OpenClaw AI 接入文档
 
-本文档详细介绍了如何让 OpenClaw AI 自主进入游戏房间，并通过 TCP API 配置游戏参数（阵营、队伍、位置等）。
+本文档面向 AI Agent、自动化脚本和服务进程，介绍如何以无头方式启动 OpenClaw，并通过 TCP API 控制房间参数（阵营、队伍、位置、开局等）。
 
-## 1. 启动与进房 (Join Game)
+## 1. 使用原则
 
-OpenClaw 可以通过命令行参数直接启动 OpenRA 客户端并连接到指定服务器。
+本项目默认面向自动化环境，而不是面向真人交互界面。
 
-### 启动命令格式
-
-```cmd
-# Windows (常规带UI模式)
-OpenRA.Game.exe Game.Mod=copilot Launch.Connect=115.191.61.19:27940
-```
-
-*   `Game.Mod=copilot`: 指定使用 Copilot 模组。
-*   `Launch.Connect=115.191.61.19:27940`: 连接到指定的比赛服务器。
-
-### 示例
-
-```python
-import subprocess
-
-def join_server():
-    cmd = [
-        "OpenRA.Game.exe", 
-        "Game.Mod=copilot", 
-        "Launch.Connect=115.191.61.19:27940"
-    ]
-    subprocess.Popen(cmd)
-```
+- 推荐始终使用 `Game.Platform=Headless` 运行。
+- 推荐通过脚本或进程管理器拉起客户端。
+- 推荐在进入房间后通过 TCP API 完成配置，而不是依赖人工点击。
+- Windows 下优先使用仓库自带的 `launch-game.cmd` 作为启动入口。
 
 ---
 
-## 2. Windows 服务器部署指南 (Headless Mode)
+## 2. 获取与编译
 
-在 Windows Server 等纯命令行或服务环境（Headless Server）中运行 OpenClaw 时，由于没有物理显示器，默认的图形渲染引擎可能会初始化失败或产生不必要的性能开销。
+OpenClaw 需要完整的 OpenRA 游戏文件才能运行。在 Windows 上可以使用 `.NET SDK` 或 `Visual Studio` 编译。
 
-为了解决这个问题，本引擎专门开发了 **Headless 无头渲染平台**。你只需要在启动参数中指定 `Game.Platform=Headless` 即可。
-
-### 2.1 获取游戏本体与编译
-
-OpenClaw 需要完整的 OpenRA 游戏文件才能运行。在 Windows 上你需要使用 Visual Studio 或 .NET SDK 进行编译：
-
-**源码编译步骤**：
-
-1.  **安装构建依赖** (Windows)
-    *   下载并安装 **.NET 6.0 SDK** (https://dotnet.microsoft.com/download/dotnet/6.0)
-    *   安装 Git (用于拉取代码)
-
-2.  **拉取代码**
-    ```cmd
-    git clone -b dev_win https://github.com/jmctsh/OpenCodeAlert.git
-    cd OpenCodeAlert
-    ```
-
-3.  **编译与资源下载**
-    你可以使用自带的 `make.cmd` 脚本进行编译：
-    ```cmd
-    # 在命令行中运行：
-    make.cmd all
-    
-    # 该脚本会自动下载必要的依赖库和资源文件，并编译生成所有可执行文件与 Headless 平台 DLL。
-    ```
-    *或者，你也可以直接用 Visual Studio 打开 `OpenRA.sln`，选择 Release 模式生成解决方案。*
-
-### 2.2 启动无头模式 (Headless Launch)
-
-使用 `Game.Platform=Headless` 参数启动游戏客户端，这样它就不会创建任何游戏窗口和声音设备，完美适配 Windows Server 和 Docker 容器环境。
+### 2.1 获取源码
 
 ```cmd
-# 在 Windows Server 上无头运行
-OpenRA.Game.exe Game.Mod=copilot Game.Platform=Headless Launch.Connect=115.191.61.19:27940
+git clone -b dev_win https://github.com/jmctsh/OpenCodeAlert.git
+cd OpenCodeAlert
 ```
 
-### 2.3 Python 集成示例
+### 2.2 构建运行文件
 
-你的 Python 脚本也应该加上 `Game.Platform=Headless` 来启动游戏进程：
+```cmd
+make.cmd all
+```
+
+该命令会下载依赖、准备资源，并生成运行 OpenClaw 所需的二进制文件与 Headless 平台支持文件。
+
+如果你更习惯 IDE，也可以直接打开 `OpenRA.sln`，使用 `Release` 配置生成解决方案。
+
+---
+
+## 3. 无头启动与进房
+
+### 3.1 推荐启动命令
+
+在仓库根目录的 `PowerShell` 中执行：
+
+```powershell
+.\launch-game.cmd Game.Mod=copilot Game.Platform=Headless Launch.Connect=115.191.61.19:27940
+```
+
+参数说明：
+
+- `Game.Mod=copilot`: 使用 Copilot 模组。
+- `Game.Platform=Headless`: 启用无头渲染平台，不创建图形窗口和音频设备。
+- `Launch.Connect=115.191.61.19:27940`: 启动后自动连接指定服务器。
+
+说明：
+
+- `launch-game.cmd` 是当前仓库在 Windows 下的推荐入口。
+- 如果尚未完成构建，上述命令不会成功，因为运行文件尚未生成。
+- 在 `PowerShell` 中必须显式写成 `.\launch-game.cmd`，不能直接写 `launch-game.cmd`。
+
+### 3.2 Python 启动示例
 
 ```python
 import subprocess
-import os
+from pathlib import Path
 
-def join_server_headless():
-    game_executable = "OpenRA.Game.exe"
-    
-    # 构建启动命令，添加 Game.Platform=Headless
+
+def join_server_headless(repo_dir: str):
+    repo = Path(repo_dir)
+    launcher = repo / "launch-game.cmd"
+
     cmd = [
-        game_executable, 
-        "Game.Mod=copilot", 
+        str(launcher),
+        "Game.Mod=copilot",
         "Game.Platform=Headless",
-        "Launch.Connect=115.191.61.19:27940"
+        "Launch.Connect=115.191.61.19:27940",
     ]
-    
-    # 启动进程
-    print(f"Starting OpenRA headless: {' '.join(cmd)}")
-    subprocess.Popen(cmd)
+
+    print(f"Starting OpenClaw headless: {' '.join(cmd)}")
+    subprocess.Popen(cmd, cwd=repo)
+
 
 if __name__ == "__main__":
-    join_server_headless()
+    join_server_headless(r"D:\OpenCodeAlert")
 ```
+
+### 3.3 运行建议
+
+- 在服务器、容器或 CI 环境中，始终使用无头模式。
+- 建议由外部守护进程统一管理启动、重启和日志采集。
+- 如果需要多实例运行，应为每个实例分配独立的工作目录、日志目录和端口策略。
 
 ---
 
-## 3. 房间控制 API (Lobby API)
+## 4. 房间控制 API (Lobby API)
 
 当 OpenClaw 进入房间（Lobby）后，客户端会开启一个 TCP 监听端口（默认 **7446**），允许外部程序通过 JSON 指令控制房间设置。
 
@@ -110,7 +100,7 @@ if __name__ == "__main__":
 *   **协议**: TCP / JSON
 *   **编码**: UTF-8
 
-### 3.1 请求格式 (Request)
+### 4.1 请求格式 (Request)
 
 ```json
 {
@@ -123,7 +113,7 @@ if __name__ == "__main__":
 }
 ```
 
-### 3.2 响应格式 (Response)
+### 4.2 响应格式 (Response)
 
 ```json
 {
@@ -140,9 +130,9 @@ if __name__ == "__main__":
 
 ---
 
-## 4. 可用指令列表
+## 5. 可用指令列表
 
-### 4.1 基础控制
+### 5.1 基础控制
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -152,7 +142,7 @@ if __name__ == "__main__":
 | `set_spectator` | `{}` | 切换为观察者 |
 | `set_ready` | `{"ready": true}` | 设置准备状态 (true/false) |
 
-### 4.2 房主专用 (Host Only)
+### 5.2 房主专用 (Host Only)
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -163,7 +153,7 @@ if __name__ == "__main__":
 | `kick` | `{"clientIndex": 1}` | 踢出玩家 |
 | `start_game` | `{}` | 开始游戏 |
 
-### 4.3 查询
+### 5.3 查询
 
 | 命令 | 参数 | 说明 |
 | :--- | :--- | :--- |
@@ -171,7 +161,7 @@ if __name__ == "__main__":
 
 ---
 
-## 5. Python 调用示例
+## 6. Python 调用示例
 
 ```python
 import socket
