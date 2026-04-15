@@ -23,6 +23,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenRA.Launcher", "OpenRA.L
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenRA.WindowsLauncher", "OpenRA.WindowsLauncher\OpenRA.WindowsLauncher.csproj", "{912B578E-0BC0-4987-807B-1E294A87DA37}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenRA.Platforms.Headless", "OpenRA.Platforms.Headless\OpenRA.Platforms.Headless.csproj", "{44D03738-C154-4028-8EA8-63A3C488A651}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -79,4 +81,6 @@ Global
 		$0.TextStylePolicy = $7
 		outputpath = .
 	EndGlobalSection
-EndGlobal
+EndProject("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenRA.Platforms.Headless", "OpenRA.Platforms.Headless\OpenRA.Platforms.Headless.csproj", "{44D03738-C154-4028-8EA8-63A3C488A651}"
+EndProject
+Global

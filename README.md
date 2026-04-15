@@ -8,12 +8,9 @@ OpenClaw 可以通过命令行参数直接启动 OpenRA 客户端并连接到指
 
 ### 启动命令格式
 
-```bash
-# Windows
+```cmd
+# Windows (常规带UI模式)
 OpenRA.Game.exe Game.Mod=copilot Launch.Connect=115.191.61.19:27940
-
-# Linux / macOS
-./launch-game.sh Game.Mod=copilot Launch.Connect=115.191.61.19:27940
 ```
 
 *   `Game.Mod=copilot`: 指定使用 Copilot 模组。
@@ -35,84 +32,63 @@ def join_server():
 
 ---
 
-## 2. Linux 服务器部署指南 (Headless Mode)
+## 2. Windows 服务器部署指南 (Headless Mode)
 
-在 Linux 服务器上运行游戏客户端通常需要图形界面支持。为了在纯命令行环境（Headless Server）中运行 OpenClaw，你需要使用 `Xvfb` 来模拟显示环境。
+在 Windows Server 等纯命令行或服务环境（Headless Server）中运行 OpenClaw 时，由于没有物理显示器，默认的图形渲染引擎可能会初始化失败或产生不必要的性能开销。
 
-### 2.1 依赖安装
+为了解决这个问题，本引擎专门开发了 **Headless 无头渲染平台**。你只需要在启动参数中指定 `Game.Platform=Headless` 即可。
 
-在 Debian/Ubuntu 系统上，你需要安装 Mono 运行时和 Xvfb：
+### 2.1 获取游戏本体与编译
 
-```bash
-# 安装 Mono (OpenRA 运行环境)
-sudo apt update
-sudo apt install mono-complete
-
-# 安装 Xvfb (虚拟显示服务)
-sudo apt install xvfb
-```
-
-### 2.2 获取游戏本体
-
-OpenClaw 需要完整的 OpenRA 游戏文件才能运行。
+OpenClaw 需要完整的 OpenRA 游戏文件才能运行。在 Windows 上你需要使用 Visual Studio 或 .NET SDK 进行编译：
 
 **源码编译步骤**：
 
-1.  **安装构建依赖** (Ubuntu/Debian)
-    ```bash
-    # 安装 git, make, unzip
-    sudo apt install git make unzip
-    
-    # 安装 .NET SDK (用于编译)
-    # 参考: https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu
-    sudo apt-get update && \
-    sudo apt-get install -y dotnet-sdk-6.0
-    ```
+1.  **安装构建依赖** (Windows)
+    *   下载并安装 **.NET 6.0 SDK** (https://dotnet.microsoft.com/download/dotnet/6.0)
+    *   安装 Git (用于拉取代码)
 
 2.  **拉取代码**
-    ```bash
+    ```cmd
     git clone -b dev https://github.com/jmctsh/OpenCodeAlert.git
     cd OpenCodeAlert
     ```
 
 3.  **编译与资源下载**
-    ```bash
-    # 下载依赖库并编译
-    make all
+    你可以使用自带的 `make.cmd` 脚本进行编译：
+    ```cmd
+    # 在命令行中运行：
+    make.cmd all
     
-    # 这一步会自动下载必要的资源文件
+    # 该脚本会自动下载必要的依赖库和资源文件，并编译生成所有可执行文件与 Headless 平台 DLL。
     ```
+    *或者，你也可以直接用 Visual Studio 打开 `OpenRA.sln`，选择 Release 模式生成解决方案。*
 
+### 2.2 启动无头模式 (Headless Launch)
 
-### 2.3 启动脚本 (Headless Launch)
+使用 `Game.Platform=Headless` 参数启动游戏客户端，这样它就不会创建任何游戏窗口和声音设备，完美适配 Windows Server 和 Docker 容器环境。
 
-使用 `xvfb-run` 命令来启动游戏客户端，这样它就不会因为找不到显示器而报错。
-
-```bash
-# 在 Linux 服务器上运行
-xvfb-run -a ./launch-game.sh Game.Mod=copilot Launch.Connect=115.191.61.19:27940
+```cmd
+# 在 Windows Server 上无头运行
+OpenRA.Game.exe Game.Mod=copilot Game.Platform=Headless Launch.Connect=115.191.61.19:27940
 ```
 
-*   `-a`: 自动寻找可用的显示编号。
-*   `./launch-game.sh`: 确保该脚本有执行权限 (`chmod +x launch-game.sh`)。
+### 2.3 Python 集成示例
 
-### 2.4 Python 集成示例
-
-你的 Python 脚本也应该通过 `xvfb-run` 来启动游戏进程：
+你的 Python 脚本也应该加上 `Game.Platform=Headless` 来启动游戏进程：
 
 ```python
 import subprocess
 import os
 
 def join_server_headless():
-    # 确保使用 Linux 启动脚本
-    game_executable = "./launch-game.sh"
+    game_executable = "OpenRA.Game.exe"
     
-    # 构建启动命令，前缀加上 xvfb-run
+    # 构建启动命令，添加 Game.Platform=Headless
     cmd = [
-        "xvfb-run", "-a",
         game_executable, 
         "Game.Mod=copilot", 
+        "Game.Platform=Headless",
         "Launch.Connect=115.191.61.19:27940"
     ]
     
