@@ -50,7 +50,7 @@ OpenClaw 需要完整的 OpenRA 游戏文件才能运行。在 Windows 上你需
 
 2.  **拉取代码**
     ```cmd
-    git clone -b dev https://github.com/jmctsh/OpenCodeAlert.git
+    git clone -b dev_win https://github.com/jmctsh/OpenCodeAlert.git
     cd OpenCodeAlert
     ```
 

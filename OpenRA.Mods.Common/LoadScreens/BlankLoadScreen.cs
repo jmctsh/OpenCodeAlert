@@ -61,6 +61,15 @@ namespace OpenRA.Mods.Common.LoadScreens
 			var connect = Launch.GetConnectEndPoint();
 			if (connect != null)
 			{
+				// In headless mode, skip shellmap and go directly to server
+				// Shellmap requires sprite resources (clear1.des etc.) that aren't available without game assets
+				var platform = args.GetValue("Game.Platform", "");
+				if (platform == "Headless")
+				{
+					Console.WriteLine("[Headless] Skipping shellmap, connecting directly to server...");
+					Game.RemoteDirectConnect(connect);
+					return;
+				}
 				Game.LoadShellMap();
 				Game.RemoteDirectConnect(connect);
 				return;

@@ -486,15 +486,15 @@ namespace OpenRA.Mods.Common.Graphics
 
 			Sprite depthSprite = null;
 			if (depthSpriteReservation != null)
-				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).First(s => s != null);
+				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).Where(s => s != null).FirstOrDefault();
 
 			var allSprites = spritesToLoad.SelectMany(r =>
 			{
 				var resolved = cache.ResolveSprites(r.Token);
 				if (r.Frames != null)
-					resolved = r.Frames.Select(f => resolved[f]).ToArray();
+					resolved = r.Frames.Where(f => f >= 0 && f < resolved.Length).Select(f => resolved[f]).ToArray();
 
-				return resolved.Select(s =>
+				return (resolved ?? Array.Empty<Sprite>()).Select(s =>
 				{
 					if (s == null)
 						return null;
@@ -535,25 +535,36 @@ namespace OpenRA.Mods.Common.Graphics
 				length = 2 * length - 2;
 			}
 
-			if (index.Count == 0)
-				throw new YamlException($"Sequence {image}.{Name} does not define any frames.");
 
-			var minIndex = index.Min();
-			var maxIndex = index.Max();
-			if (minIndex < 0 || maxIndex >= allSprites.Length)
-				throw new YamlException($"Sequence {image}.{Name} uses frames between {minIndex}..{maxIndex}, but only 0..{allSprites.Length - 1} exist.");
+			// For headless mode: allow empty sprite arrays (missing asset files)
+			if (allSprites.Length == 0)
+			{
+				sprites = Array.Empty<Sprite>();
+				shadowSprites = Array.Empty<Sprite>();
+			}
+			else
+			{
+				if (index.Count == 0)
+					throw new YamlException($"Sequence {image}.{Name} does not define any frames.");
 
-			sprites = index.Select(f => allSprites[f]).ToArray();
-			if (shadowStart >= 0)
-				shadowSprites = index.Select(f => allSprites[f - start + shadowStart]).ToArray();
+				var minIndex = index.Min();
+				var maxIndex = index.Max();
+				if (minIndex < 0 || maxIndex >= allSprites.Length)
+					throw new YamlException($"Sequence {image}.{Name} uses frames between {minIndex}..{maxIndex}, but only 0..{allSprites.Length - 1} exist.");
+
+				sprites = index.Select(f => allSprites[f]).ToArray();
+				if (shadowStart >= 0)
+					shadowSprites = index.Select(f => allSprites[f - start + shadowStart]).ToArray();
+			}
 
 			bounds = sprites.Concat(shadowSprites ?? Enumerable.Empty<Sprite>()).Select(OffsetSpriteBounds).Union();
 		}
 
-		protected static Rectangle OffsetSpriteBounds(Sprite sprite)
-		{
+		protected static Rectangle OffsetSpriteBounds(Sprite sprite) {
 			if (sprite == null || sprite.Bounds.IsEmpty)
+			{
 				return Rectangle.Empty;
+			}
 
 			return new Rectangle(
 				(int)(sprite.Offset.X - sprite.Size.X / 2),

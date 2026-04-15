@@ -15,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
 using SDL2;
@@ -63,6 +64,28 @@ namespace OpenRA.WindowsLauncher
 			var launcherPath = Assembly.GetExecutingAssembly().Location;
 			var directory = Path.GetDirectoryName(launcherPath);
 			Directory.SetCurrentDirectory(directory);
+
+			// Register assembly resolver for self-contained publish
+			// First check if assembly is already loaded, then load from disk if not
+			AppDomain.CurrentDomain.AssemblyResolve += (sender, eventArgs) =>
+			{
+				var assemblyName = new AssemblyName(eventArgs.Name).Name;
+				
+				// Check if already loaded
+				var loaded = AppDomain.CurrentDomain.GetAssemblies()
+					.FirstOrDefault(a => a.GetName().Name == assemblyName);
+				if (loaded != null)
+					return loaded;
+				
+				// Load from disk
+				var path = Path.Combine(AppContext.BaseDirectory, assemblyName + ".dll");
+				if (File.Exists(path))
+				{
+					// Use AssemblyLoadContext.Default to ensure consistent loading
+					return System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+				}
+				return null;
+			};
 
 			AppDomain.CurrentDomain.UnhandledException += (_, e) => ExceptionHandler.HandleFatalError((Exception)e.ExceptionObject);
 

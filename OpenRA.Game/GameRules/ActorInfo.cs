@@ -114,9 +114,48 @@ namespace OpenRA
 				OptionalDependencies = OptionalPrerequisitesOf(i).ToList()
 			}).ToList();
 
+			// DEBUG: Log all traits and their dependencies for world actor
+			if (Name == "world")
+			{
+				foreach (var s in source)
+				{
+					var deps = string.Join(", ", s.Dependencies.Select(d => d.FullName));
+					if (s.Dependencies.Count > 0)
+						Log.Write("debug", $"[DEBUG] world trait: {s.Type.FullName} deps=[{deps}]");
+				}
+				
+				// Check BuildingInfluenceInfo
+				var buildingInfluenceInfo = source.SelectMany(s => s.Dependencies).FirstOrDefault(d => d.Name == "BuildingInfluenceInfo");
+				if (buildingInfluenceInfo != null)
+				{
+					var matching = source.Where(s => buildingInfluenceInfo.IsAssignableFrom(s.Type)).ToList();
+					Log.Write("debug", $"[DEBUG] Traits matching BuildingInfluenceInfo: {matching.Count}");
+					foreach (var m in matching)
+						Log.Write("debug", $"[DEBUG]   - {m.Type.FullName}");
+				}
+				
+				// Check IResourceLayerInfo
+				var iResourceLayerInfo = source.SelectMany(s => s.Dependencies).FirstOrDefault(d => d.Name == "IResourceLayerInfo");
+				if (iResourceLayerInfo != null)
+				{
+					var matchingTraits = source.Where(s => iResourceLayerInfo.IsAssignableFrom(s.Type)).ToList();
+					Log.Write("debug", $"[DEBUG] Traits matching IResourceLayerInfo: {matchingTraits.Count}");
+					foreach (var m in matchingTraits)
+						Log.Write("debug", $"[DEBUG]   - {m.Type.FullName}");
+				}
+			}
+
 			var resolved = source.Where(s => s.Dependencies.Count == 0 && s.OptionalDependencies.Count == 0).ToList();
 			var unresolved = source.ToHashSet();
 			unresolved.ExceptWith(resolved);
+
+			// DEBUG: Log initial state
+			if (Name == "world")
+			{
+				Log.Write("debug", $"[DEBUG] Initial resolved: {resolved.Count}, unresolved: {unresolved.Count}");
+				foreach (var u in unresolved.Where(u => u.Type.Name.Contains("Resource") || u.Type.Name.Contains("Building")))
+					Log.Write("debug", $"[DEBUG] Unresolved: {u.Type.Name} deps=[{string.Join(", ", u.Dependencies.Select(d => d.Name))}]");
+			}
 
 			static bool AreResolvable(Type a, Type b) => a.IsAssignableFrom(b);
 
@@ -132,8 +171,42 @@ namespace OpenRA
 			// Each time we resolve some traits, this means dependencies for other traits may then be possible to satisfy in the next pass.
 #pragma warning disable CA1851 // Possible multiple enumerations of 'IEnumerable' collection
 			var readyToResolve = more.ToList();
+			var iteration = 0;
 			while (readyToResolve.Count != 0)
 			{
+				iteration++;
+				if (Name == "world" && iteration <= 5)
+				{
+					Log.Write("debug", $"[DEBUG] Iteration {iteration}: resolving {readyToResolve.Count} traits");
+					foreach (var r in readyToResolve.Where(r => r.Type.Name.Contains("Resource") || r.Type.Name.Contains("WithResource")))
+						Log.Write("debug", $"[DEBUG]   Resolving: {r.Type.Name}");
+					
+					// Check why WithResourceAnimationInfo is not in readyToResolve
+					var wra = unresolved.FirstOrDefault(u => u.Type.Name == "WithResourceAnimationInfo");
+					if (wra != null)
+					{
+						var depsMet = wra.Dependencies.All(d => resolved.Exists(r => AreResolvable(d, r.Type)));
+						var hasUnresolved = wra.Dependencies.Any(d => unresolved.Any(u1 => AreResolvable(d, u1.Type)));
+						Log.Write("debug", $"[DEBUG] WithResourceAnimationInfo: depsMet={depsMet} hasUnresolved={hasUnresolved}");
+						foreach (var d in wra.Dependencies)
+						{
+							var inResolved = resolved.Exists(r => AreResolvable(d, r.Type));
+							var inUnresolved = unresolved.Any(u1 => AreResolvable(d, u1.Type));
+							Log.Write("debug", $"[DEBUG]   dep {d.Name}: inResolved={inResolved} inUnresolved={inUnresolved}");
+							
+							// Check each resolved trait
+							if (!inResolved)
+							{
+								foreach (var r in resolved.Where(r => r.Type.Name.Contains("Resource")))
+								{
+									var canAssign = d.IsAssignableFrom(r.Type);
+									Log.Write("debug", $"[DEBUG]     {d.Name}.IsAssignableFrom({r.Type.Name}) = {canAssign}");
+								}
+							}
+						}
+					}
+				}
+				
 				resolved.AddRange(readyToResolve);
 				unresolved.ExceptWith(readyToResolve);
 				readyToResolve.Clear();

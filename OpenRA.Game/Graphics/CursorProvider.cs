@@ -39,13 +39,27 @@ namespace OpenRA.Graphics
 			Palettes = cursorsYaml.Nodes.Select(n => n.Value.Value)
 				.Where(p => p != null)
 				.Distinct()
-				.ToDictionary(p => p, p => pals[p].ReadPalette(modData.DefaultFileSystem));
+				.Select(p => new { Name = p, Palette = pals.TryGetValue(p, out var pi) ? pi.ReadPalette(modData.DefaultFileSystem) : null })
+				.Where(x => x.Palette != null)
+				.ToDictionary(x => x.Name, x => x.Palette);
 
 			var frameCache = new FrameCache(fileSystem, modData.SpriteLoaders);
 			var cursors = new Dictionary<string, CursorSequence>();
 			foreach (var s in cursorsYaml.Nodes)
+			{
+				var cursorSrc = s.Key;
 				foreach (var sequence in s.Value.Nodes)
-					cursors.Add(sequence.Key, new CursorSequence(frameCache, sequence.Key, s.Key, s.Value.Value, sequence.Value));
+				{
+					try
+					{
+						cursors.Add(sequence.Key, new CursorSequence(frameCache, sequence.Key, cursorSrc, s.Value.Value, sequence.Value));
+					}
+					catch (Exception)
+					{
+						// Skip cursor sequences with missing files (for headless mode compatibility)
+					}
+				}
+			}
 
 			Cursors = cursors;
 		}

@@ -47,7 +47,14 @@ namespace OpenRA.Graphics
 			foreach (var kv in cursorProvider.Cursors)
 			{
 				var frames = kv.Value.Frames;
-				var palette = !string.IsNullOrEmpty(kv.Value.Palette) ? cursorProvider.Palettes[kv.Value.Palette] : null;
+				var paletteName = kv.Value.Palette;
+				ImmutablePalette palette = null;
+				if (!string.IsNullOrEmpty(paletteName))
+					cursorProvider.Palettes.TryGetValue(paletteName, out palette);
+
+				// Skip cursors that require a palette we don't have (for headless mode)
+				if (frames.Length > 0 && palette == null)
+					continue;
 
 				var c = new Cursor
 				{
@@ -74,6 +81,9 @@ namespace OpenRA.Graphics
 					var type = f.Type;
 					if (type == SpriteFrameType.Indexed8)
 					{
+						// Skip frames without palette (for headless mode compatibility)
+						if (palette == null)
+							continue;
 						data = ConvertIndexedToBgra(kv.Key, f, palette);
 						type = SpriteFrameType.Bgra32;
 					}

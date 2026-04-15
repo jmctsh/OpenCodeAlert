@@ -124,16 +124,16 @@ namespace OpenRA.Mods.Cnc.Graphics
 
 			Sprite depthSprite = null;
 			if (depthSpriteReservation != null)
-				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).First(s => s != null);
+				depthSprite = cache.ResolveSprites(depthSpriteReservation.Value).Where(s => s != null).FirstOrDefault();
 
 			var allSprites = spritesToLoad.SelectMany(r =>
 			{
 				var resolved = cache.ResolveSprites(r.Token);
 
 				if (r.Frames != null)
-					resolved = r.Frames.Select(f => resolved[f]).ToArray();
+					resolved = r.Frames.Where(f => f >= 0 && f < resolved.Length).Select(f => resolved[f]).ToArray();
 
-				return resolved.Select(s =>
+				return (resolved ?? Array.Empty<Sprite>()).Select(s =>
 				{
 					if (s == null)
 						return null;
